@@ -11,7 +11,7 @@ const registerValidation = [
     body('full_name').notEmpty(),
     body('phone').notEmpty()
 ];
-
+    
 const loginValidation = [
     body('email').isEmail(),
     body('password').notEmpty()

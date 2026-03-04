@@ -9,6 +9,8 @@ const jwtConfig = require('../config/jwt');
 exports.register = async (req, res) => {
     try {
         const { email, password, full_name, phone, room_number, building, campus_address } = req.body;
+
+        console.log(email);
         
         // Check if email already exists
         if (await User.emailExists(email)) {
