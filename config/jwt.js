@@ -1,6 +1,3 @@
-// config/jwt.js
-// JWT configuration
-
 require('dotenv').config();
 
 module.exports = {

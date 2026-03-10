@@ -1,6 +1,3 @@
-// models/User.js
-// User model - Supabase operations for users
-
 const { supabase } = require('../config/supabase');
 const bcrypt = require('bcrypt');
 
