@@ -1,7 +1,7 @@
 // models/User.js
-// User model - Database operations for users
+// User model - Supabase operations for users
 
-const { pool } = require('../config/database');
+const { supabase } = require('../config/supabase');
 const bcrypt = require('bcrypt');
 
 class User {
@@ -13,37 +13,50 @@ class User {
         const saltRounds = 10;
         const password_hash = await bcrypt.hash(password, saltRounds);
         
-        const [result] = await pool.query(
-            `INSERT INTO users (email, password_hash, full_name, phone, room_number, building, campus_address)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [email, password_hash, full_name, phone, room_number || null, building || null, campus_address || null]
-        );
+        const { data, error } = await supabase
+            .from('users')
+            .insert([{
+                email,
+                password_hash,
+                full_name,
+                phone,
+                room_number: room_number || null,
+                building: building || null,
+                campus_address: campus_address || null
+            }])
+            .select()
+            .single();
         
-        return result.insertId;
+        if (error) throw error;
+        
+        return data.user_id; // Return user_id (INT)
     }
     
     // Find user by email
     static async findByEmail(email) {
-        const [users] = await pool.query(
-            `SELECT user_id, email, password_hash, full_name, phone, room_number, building, campus_address, is_active
-             FROM users 
-             WHERE email = ?`,
-            [email]
-        );
+        const { data, error } = await supabase
+            .from('users')
+            .select('user_id, email, password_hash, full_name, phone, room_number, building, campus_address, is_active')
+            .eq('email', email)
+            .single();
         
-        return users[0] || null;
+        // PGRST116 = no rows returned (user not found)
+        if (error && error.code !== 'PGRST116') throw error;
+        
+        return data || null;
     }
     
     // Find user by ID
     static async findById(user_id) {
-        const [users] = await pool.query(
-            `SELECT user_id, email, full_name, phone, room_number, building, campus_address, is_active, created_at
-             FROM users 
-             WHERE user_id = ?`,
-            [user_id]
-        );
+        const { data, error } = await supabase
+            .from('users')
+            .select('user_id, email, full_name, phone, room_number, building, campus_address, is_active, created_at')
+            .eq('user_id', user_id)
+            .single();
         
-        return users[0] || null;
+        if (error && error.code !== 'PGRST116') throw error;
+        
+        return data || null;
     }
     
     // Verify password
@@ -53,36 +66,44 @@ class User {
     
     // Update user
     static async update(user_id, updates) {
-        const fields = [];
-        const values = [];
-        
+        // Remove undefined values
+        const cleanUpdates = {};
         Object.keys(updates).forEach(key => {
             if (updates[key] !== undefined) {
-                fields.push(`${key} = ?`);
-                values.push(updates[key]);
+                cleanUpdates[key] = updates[key];
             }
         });
         
-        if (fields.length === 0) return false;
+        if (Object.keys(cleanUpdates).length === 0) return false;
         
-        values.push(user_id);
+        const { data, error } = await supabase
+            .from('users')
+            .update(cleanUpdates)
+            .eq('user_id', user_id)
+            .select()
+            .single();
         
-        const [result] = await pool.query(
-            `UPDATE users SET ${fields.join(', ')} WHERE user_id = ?`,
-            values
-        );
+        if (error) throw error;
         
-        return result.affectedRows > 0;
+        return !!data; // Return true if updated
     }
     
     // Check if email exists
     static async emailExists(email) {
-        const [users] = await pool.query(
-            'SELECT user_id FROM users WHERE email = ?',
-            [email]
-        );
+        const { data, error } = await supabase
+            .from('users')
+            .select('user_id')
+            .eq('email', email)
+            .single();
         
-        return users.length > 0;
+        // If PGRST116 (no rows), email doesn't exist
+        if (error && error.code === 'PGRST116') return false;
+        
+        // If other error, throw it
+        if (error) throw error;
+        
+        // If data exists, email is taken
+        return !!data;
     }
 }
 
