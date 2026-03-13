@@ -1,88 +1,144 @@
 // models/Cart.js
-// Cart model - Database operations for shopping cart
+// Cart model - Supabase operations for shopping cart
 
-const { pool } = require('../config/database');
+const { supabase } = require('../config/supabase');
 
 class Cart {
     // Add item to cart
     static async addItem(user_id, product_id, quantity) {
-        const [result] = await pool.query(
-            `INSERT INTO cart_items (user_id, product_id, quantity, added_at)
-             VALUES (?, ?, ?, NOW())
-             ON DUPLICATE KEY UPDATE 
-                 quantity = quantity + VALUES(quantity),
-                 added_at = NOW()`,
-            [user_id, product_id, quantity]
-        );
+        // Check if item already exists in cart
+        const { data: existing } = await supabase
+            .from('cart_items')
+            .select('cart_id, quantity')
+            .eq('user_id', user_id)
+            .eq('product_id', product_id)
+            .single();
         
-        return result.affectedRows > 0;
+        if (existing) {
+            // Update existing item - add to quantity
+            const { data, error } = await supabase
+                .from('cart_items')
+                .update({ 
+                    quantity: existing.quantity + quantity,
+                    added_at: new Date().toISOString()
+                })
+                .eq('cart_id', existing.cart_id)
+                .select()
+                .single();
+            
+            if (error) throw error;
+            return !!data;
+        } else {
+            // Insert new item
+            const { data, error } = await supabase
+                .from('cart_items')
+                .insert([{ 
+                    user_id, 
+                    product_id, 
+                    quantity,
+                    added_at: new Date().toISOString()
+                }])
+                .select()
+                .single();
+            
+            if (error) throw error;
+            return !!data;
+        }
     }
     
-    // Get user's cart
+    // Get user's cart with product details
     static async getUserCart(user_id) {
-        const [items] = await pool.query(
-            `SELECT 
-                c.cart_id,
-                c.quantity,
-                p.product_id,
-                p.name,
-                p.price,
-                p.image_url,
-                p.stock,
-                (c.quantity * p.price) AS subtotal
-             FROM cart_items c
-             JOIN products p ON c.product_id = p.product_id
-             WHERE c.user_id = ?
-             ORDER BY c.added_at DESC`,
-            [user_id]
-        );
+        const { data, error } = await supabase
+            .from('cart_items')
+            .select(`
+                cart_id,
+                quantity,
+                added_at,
+                products (
+                    product_id,
+                    name,
+                    price,
+                    image_url,
+                    stock
+                )
+            `)
+            .eq('user_id', user_id)
+            .order('added_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        // Transform nested data and add subtotal
+        const items = data.map(item => ({
+            cart_id: item.cart_id,
+            quantity: item.quantity,
+            product_id: item.products.product_id,
+            name: item.products.name,
+            price: item.products.price,
+            image_url: item.products.image_url,
+            stock: item.products.stock,
+            subtotal: (item.quantity * parseFloat(item.products.price)).toFixed(2)
+        }));
         
         return items;
     }
     
     // Update item quantity
     static async updateQuantity(user_id, product_id, quantity) {
-        const [result] = await pool.query(
-            'UPDATE cart_items SET quantity = ? WHERE user_id = ? AND product_id = ?',
-            [quantity, user_id, product_id]
-        );
+        const { data, error } = await supabase
+            .from('cart_items')
+            .update({ quantity })
+            .eq('user_id', user_id)
+            .eq('product_id', product_id)
+            .select()
+            .single();
         
-        return result.affectedRows > 0;
+        if (error && error.code !== 'PGRST116') throw error;
+        
+        return !!data;
     }
     
     // Remove item from cart
     static async removeItem(user_id, product_id) {
-        const [result] = await pool.query(
-            'DELETE FROM cart_items WHERE user_id = ? AND product_id = ?',
-            [user_id, product_id]
-        );
+        const { data, error } = await supabase
+            .from('cart_items')
+            .delete()
+            .eq('user_id', user_id)
+            .eq('product_id', product_id)
+            .select();
         
-        return result.affectedRows > 0;
+        if (error) throw error;
+        
+        return data.length > 0;
     }
     
     // Clear user's cart
     static async clearCart(user_id) {
-        const [result] = await pool.query(
-            'DELETE FROM cart_items WHERE user_id = ?',
-            [user_id]
-        );
+        const { data, error } = await supabase
+            .from('cart_items')
+            .delete()
+            .eq('user_id', user_id)
+            .select();
         
-        return result.affectedRows;
+        if (error) throw error;
+        
+        return data.length; // Return number of deleted items
     }
     
     // Get cart total
     static async getCartTotal(user_id) {
-        const [result] = await pool.query(
-            `SELECT 
-                COUNT(*) AS item_count,
-                COALESCE(SUM(c.quantity * p.price), 0) AS total_amount
-             FROM cart_items c
-             JOIN products p ON c.product_id = p.product_id
-             WHERE c.user_id = ?`,
-            [user_id]
-        );
+        // Get cart items with product prices
+        const cartItems = await this.getUserCart(user_id);
         
-        return result[0];
+        // Calculate totals
+        const item_count = cartItems.length;
+        const total_amount = cartItems.reduce((sum, item) => 
+            sum + parseFloat(item.subtotal), 0
+        ).toFixed(2);
+        
+        return {
+            item_count,
+            total_amount
+        };
     }
 }
 
