@@ -1,80 +1,104 @@
 // models/Product.js
-// Product model - Database operations for products
+// Product model - Supabase operations for products
 
-const { pool } = require('../config/database');
+const { supabase } = require('../config/supabase');
 
 class Product {
     // Get all products
     static async findAll() {
-        const [products] = await pool.query(
-            `SELECT product_id, name, description, price, image_url, stock, is_available, created_at
-             FROM products 
-             WHERE is_available = TRUE 
-             ORDER BY name`
-        );
+        const { data, error } = await supabase
+            .from('products')
+            .select('product_id, name, description, price, image_url, stock, is_available, created_at')
+            .eq('is_available', true)
+            .order('name');
         
-        return products;
+        if (error) throw error;
+        
+        return data || [];
     }
     
     // Get product by ID
     static async findById(product_id) {
-        const [products] = await pool.query(
-            `SELECT product_id, name, description, price, image_url, stock, is_available, created_at
-             FROM products 
-             WHERE product_id = ?`,
-            [product_id]
-        );
+        const { data, error } = await supabase
+            .from('products')
+            .select('product_id, name, description, price, image_url, stock, is_available, created_at')
+            .eq('product_id', product_id)
+            .single();
         
-        return products[0] || null;
+        if (error && error.code !== 'PGRST116') throw error;
+        
+        return data || null;
     }
     
     // Search products
     static async search(searchTerm) {
-        const term = `%${searchTerm}%`;
+        const { data, error } = await supabase
+            .from('products')
+            .select('product_id, name, description, price, image_url, stock, is_available')
+            .eq('is_available', true)
+            .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
+            .order('name');
         
-        const [products] = await pool.query(
-            `SELECT product_id, name, description, price, image_url, stock, is_available
-             FROM products 
-             WHERE is_available = TRUE 
-             AND (name LIKE ? OR description LIKE ?)
-             ORDER BY name`,
-            [term, term]
-        );
+        if (error) throw error;
         
-        return products;
+        return data || [];
     }
     
     // Update stock
     static async updateStock(product_id, newStock) {
-        const [result] = await pool.query(
-            'UPDATE products SET stock = ? WHERE product_id = ?',
-            [newStock, product_id]
-        );
+        const { data, error } = await supabase
+            .from('products')
+            .update({ stock: newStock })
+            .eq('product_id', product_id)
+            .select()
+            .single();
         
-        return result.affectedRows > 0;
+        if (error) throw error;
+        
+        return !!data;
     }
     
     // Reduce stock (for orders)
     static async reduceStock(product_id, quantity) {
-        const [result] = await pool.query(
-            'UPDATE products SET stock = stock - ? WHERE product_id = ? AND stock >= ?',
-            [quantity, product_id, quantity]
-        );
+        // First, get current stock
+        const { data: product, error: fetchError } = await supabase
+            .from('products')
+            .select('stock')
+            .eq('product_id', product_id)
+            .single();
         
-        return result.affectedRows > 0;
+        if (fetchError) throw fetchError;
+        
+        // Check if enough stock
+        if (!product || product.stock < quantity) {
+            return false;
+        }
+        
+        // Reduce stock
+        const { data, error } = await supabase
+            .from('products')
+            .update({ stock: product.stock - quantity })
+            .eq('product_id', product_id)
+            .select()
+            .single();
+        
+        if (error) throw error;
+        
+        return !!data;
     }
     
     // Get low stock products
     static async getLowStock(threshold = 15) {
-        const [products] = await pool.query(
-            `SELECT product_id, name, stock, price
-             FROM products 
-             WHERE stock < ? AND is_available = TRUE
-             ORDER BY stock ASC`,
-            [threshold]
-        );
+        const { data, error } = await supabase
+            .from('products')
+            .select('product_id, name, stock, price')
+            .eq('is_available', true)
+            .lt('stock', threshold)
+            .order('stock', { ascending: true });
         
-        return products;
+        if (error) throw error;
+        
+        return data || [];
     }
 }
 
