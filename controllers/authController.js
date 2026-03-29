@@ -1,105 +1,85 @@
-// controllers/authController.js
-// Authentication controller - Handle register and login logic
-
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const jwtConfig = require('../config/jwt');
 
-// Register new user
 exports.register = async (req, res) => {
     try {
+        console.log('📥 [REGISTER] Request body received:', req.body);
+        
         const { email, password, full_name, phone, room_number, building, campus_address } = req.body;
 
-        console.log(email);
-        
-        // Check if email already exists
         if (await User.emailExists(email)) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Email already registered' 
-            });
+            console.log('❌ [REGISTER] Email already exists:', email);
+            return res.status(400).json({ success: false, error: 'Email already registered' });
         }
-        
-        // Create user
+
         const user_id = await User.create({
-            email,
-            password,
-            full_name,
-            phone,
-            room_number,
-            building,
-            campus_address
+            email, password, full_name, phone, room_number, building, campus_address
         });
-        
-        // Create JWT token
+        console.log('✅ [REGISTER] User created with ID:', user_id);
+
         const token = jwt.sign(
             { user_id, email },
             jwtConfig.secret,
             { expiresIn: jwtConfig.expiresIn }
         );
-        
-        res.status(201).json({
+        console.log('✅ [REGISTER] JWT token generated');
+
+        const responsePayload = {
             success: true,
             message: 'User registered successfully',
             token,
-            user: {
-                user_id,
-                email,
-                full_name,
-                phone
-            }
-        });
-        
+            user: { user_id, email, full_name, phone, role: 'user' }
+        };
+        console.log('📤 [REGISTER] Sending response:', JSON.stringify(responsePayload, null, 2));
+
+        res.status(201).json(responsePayload);
+
     } catch (error) {
-        console.error('Register error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Server error during registration' 
-        });
+        console.error('💥 [REGISTER] Error:', error.message);
+        console.error(error.stack);
+        res.status(500).json({ success: false, error: 'Server error during registration' });
     }
 };
 
-// User login
 exports.login = async (req, res) => {
     try {
+        console.log('📥 [LOGIN] Request body received:', req.body);
+
         const { email, password } = req.body;
-        
-        // Find user
+
         const user = await User.findByEmail(email);
-        
+        console.log('🔍 [LOGIN] User found in DB:', user ? JSON.stringify({ 
+            user_id: user.user_id, 
+            email: user.email, 
+            role: user.role,        // ← check this value!
+            is_active: user.is_active 
+        }) : 'NULL - user not found');
+
         if (!user) {
-            return res.status(401).json({ 
-                success: false, 
-                error: 'Invalid email or password' 
-            });
+            return res.status(401).json({ success: false, error: 'Invalid email or password' });
         }
-        
-        // Check if user is active
+
         if (!user.is_active) {
-            return res.status(401).json({ 
-                success: false, 
-                error: 'Account is inactive' 
-            });
+            console.log('❌ [LOGIN] Account inactive for:', email);
+            return res.status(401).json({ success: false, error: 'Account is inactive' });
         }
-        
-        // Verify password
+
         const validPassword = await User.verifyPassword(password, user.password_hash);
-        
+        console.log('🔑 [LOGIN] Password valid:', validPassword);
+
         if (!validPassword) {
-            return res.status(401).json({ 
-                success: false, 
-                error: 'Invalid email or password' 
-            });
+            return res.status(401).json({ success: false, error: 'Invalid email or password' });
         }
-        
-        // Create JWT token
+
         const token = jwt.sign(
             { user_id: user.user_id, email: user.email },
             jwtConfig.secret,
             { expiresIn: jwtConfig.expiresIn }
         );
-        
-        res.json({
+        console.log('✅ [LOGIN] JWT token generated');
+
+        const responsePayload = {
             success: true,
             message: 'Login successful',
             token,
@@ -110,41 +90,30 @@ exports.login = async (req, res) => {
                 phone: user.phone,
                 room_number: user.room_number,
                 building: user.building,
-                campus_address: user.campus_address
+                campus_address: user.campus_address,
+                role: user.role    // ← this is the critical field
             }
-        });
-        
+        };
+        console.log('📤 [LOGIN] Sending response:', JSON.stringify(responsePayload, null, 2));
+
+        res.json(responsePayload);
+
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Server error during login' 
-        });
+        console.error('💥 [LOGIN] Error:', error.message);
+        console.error(error.stack);
+        res.status(500).json({ success: false, error: 'Server error during login' });
     }
 };
 
-// Get current user info
 exports.getProfile = async (req, res) => {
     try {
         const user = await User.findById(req.user_id);
-        
         if (!user) {
-            return res.status(404).json({ 
-                success: false, 
-                error: 'User not found' 
-            });
+            return res.status(404).json({ success: false, error: 'User not found' });
         }
-        
-        res.json({
-            success: true,
-            user
-        });
-        
+        res.json({ success: true, user });
     } catch (error) {
-        console.error('Get profile error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Server error' 
-        });
+        console.error('💥 [PROFILE] Error:', error.message);
+        res.status(500).json({ success: false, error: 'Server error' });
     }
 };
