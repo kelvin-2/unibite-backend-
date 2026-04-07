@@ -42,12 +42,16 @@ app.get('/', (req, res) => {
         status: 'running'
     });
 });
+app.get("/api/ping", (req, res) => {
+  res.send("pong");
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
+
 
 // 404 handler
 app.use((req, res) => {
@@ -56,9 +60,7 @@ app.use((req, res) => {
         error: 'Route not found' 
     });
 });
-app.get("/api/ping", (req, res) => {
-  res.send("pong");
-});
+
 
 
 // Error handler
