@@ -56,6 +56,10 @@ app.use((req, res) => {
         error: 'Route not found' 
     });
 });
+app.get("/api/ping", (req, res) => {
+  res.send("pong");
+});
+
 
 // Error handler
 app.use((err, req, res, next) => {
